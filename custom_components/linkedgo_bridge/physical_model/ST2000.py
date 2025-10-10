@@ -298,8 +298,8 @@ class ST2000:
             FAN_FOCUS: [{"index": 6, "value": 1}],
             FAN_LOW: [{"index": 6, "value": 2}],
             FAN_MEDIUM: [{"index": 6, "value": 3}],
-            FAN_HIGH: [{"index": 6, "value": 3}],
-            FAN_TOP: [{"index": 6, "value": 2}],
+            FAN_HIGH: [{"index": 6, "value": 4}],
+            FAN_TOP: [{"index": 6, "value": 5}],
         }
         default = {
             FAN_ON: [{"index": 6, "value": 1}],

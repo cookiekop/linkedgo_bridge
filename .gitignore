@@ -1,0 +1,5 @@
+
+*.pyc
+
+custom_components/linkedgo_bridge/__pycache__
+custom_components/linkedgo_bridge/physical_model/__pycache__
