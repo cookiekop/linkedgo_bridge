@@ -6,8 +6,14 @@
 <p align="left">
   <img src="http://smartspeaker.linked-go.com/iotapplet-image/ha_logo.png" alt="linkedgo" title="linkedgo" la="la">
 </p>
+Linkedgo Bridge Integration is officially supported by linkedgo company. It allows you to control your linkedgo devices in Home Assistant. Currently supported products:
 
-Linekdgo Bridge Integration is officially supported by linkedgo company. It allows you to control your linkedgo devices in Home Assistant. Currently, it has already supported thomerstate (ST830, ST1800HN, ST2000).
+| model               | name                         |
+| ------------------- | ---------------------------- |
+| ST830, ST833, ST850 | Bluetooth Youth Edition      |
+| ST1803              | Starlight Edition Thermostat |
+| ST2000, ST2001      | Aurora Edition Thermostat    |
+
 
 
 ## Installation

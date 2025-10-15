@@ -57,7 +57,7 @@ from homeassistant.components.climate import (
 )
 
 
-class ST830:
+class ST1800_HN:
     """Physical mode, mode: ST1800-HN, pid: 1603bec1cd5903e91603bec1cd599801."""
 
     ha_type = CLIMATE_DOMAIN
@@ -127,11 +127,19 @@ class ST830:
 
     @staticmethod
     def attr_max_temp(state: dict) -> tuple:
-        return (True, 50)
+        if "5" in state:
+            value = state["5"]
+            value = value // 10
+            return (True, value)
+        return (True, 35)
 
     @staticmethod
     def attr_min_temp(state: dict) -> tuple:
-        return (True, 5)
+        if "4" in state:
+            value = state["4"]
+            value = value // 10
+            return (True, value)
+        return (True, 15)
 
     @staticmethod
     def attr_target_temperature(state: dict) -> tuple:
@@ -143,15 +151,23 @@ class ST830:
 
     @staticmethod
     def attr_target_temperature_high(state: dict) -> tuple:
-        return (True, 50)
+        if "5" in state:
+            value = state["5"]
+            value = value // 10
+            return (True, value)
+        return (True, 35)
 
     @staticmethod
     def attr_target_temperature_low(state: dict) -> tuple:
-        return (True, 5)
+        if "4" in state:
+            value = state["4"]
+            value = value // 10
+            return (True, value)
+        return (True, 15)
 
     @staticmethod
     def attr_target_temperature_step(state: dict) -> tuple:
-        return (True, 0.5)
+        return (True, 1)
 
     @staticmethod
     def service_set_hvac_mode(entity: Any, value: Any) -> tuple:
@@ -166,7 +182,14 @@ class ST830:
 
     @staticmethod
     def service_set_temperature(entity: Any, value: Any) -> tuple:
-        if value >= 5 and value <= 50:
+        max_temp = 35
+        min_temp = 15
+        state = entity.raw_data
+        if "4" in state:
+            min_temp = state["4"] // 10
+        if "5" in state:
+            max_temp = state["5"] // 10
+        if value >= min_temp and value <= max_temp:
             dp = [{"index": 1, "value": (value * 10)}]
             return (True, dp)
         return (False, None)

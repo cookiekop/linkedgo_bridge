@@ -6,8 +6,15 @@
 <p align="left">
   <img src="http://smartspeaker.linked-go.com/iotapplet-image/ha_logo.png" alt="零狗智能" title="零狗智能" la="la">
 </p>
+Linkedgo Bridge 是由零狗官方提供支持的 Home Assistant 的集成组件，用于在 Home Assistant 平台控制您的零狗智能设备，目前已经支持的产品类：
 
-Linekdgo Bridge 是由零狗官方提供支持的 Home Assistant 的集成组件，用于在 Home Assistant 平台控制您的零狗智能设备，目前已经支持温控类产品（ST830 蓝牙青春版, ST1800-HN 单地暖, ST2000 极光板）。
+| 型号                | 名称       |
+| ------------------- | ---------- |
+| ST830，ST833，ST850 | 蓝牙青春版 |
+| ST1803              | 单地暖     |
+| ST2000，ST2001      | 极光板     |
+
+
 
 ## 安装
 
@@ -31,8 +38,12 @@ HACS > 在搜索框中输入 **Linkedgo Bridge** > 点击搜索结果 **Linkedgo
 
 ### 零狗APP
 1. 下载零狗APP，并注册用户账号
+
 2. 创建住宅
+
 3. 使用零狗APP完成设备添加，并分配楼层、房间信息
+
+   > 推荐设备命名方式：楼层+房间+设备名，例如：一楼 客厅 空调
 
 
 
