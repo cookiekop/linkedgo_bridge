@@ -17,10 +17,10 @@ class DeviceEntity:
     product_model: str
     ha_type: str
     ha_supported_features: int
-    device_id: str
+    device_id: str | int
     device_mac: str
     device_name: str
-    sw_version: str
+    sw_version: str | int | None
     online: bool
-    properties: list[dict[str, Any]]
-    raw_data: list[dict[str, Any]]
+    properties: dict[str, Any]
+    raw_data: dict[str, Any] | None

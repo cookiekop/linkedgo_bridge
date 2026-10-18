@@ -332,7 +332,7 @@ class ST2000:
     @staticmethod
     def service_set_temperature(entity: Any, value: Any) -> tuple:
         if value >= 5 and value <= 35:
-            dp = [{"index": 7, "value": (value * 10)}]
+            dp = [{"index": 7, "value": round(value * 10)}]
             return (True, dp)
         return (False, None)
 

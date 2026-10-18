@@ -5,12 +5,14 @@ of making this example code executable.
 """
 
 import logging
+from collections.abc import Callable
 from typing import Any
 from enum import StrEnum
 
 from .xlink_api import XlinkAPI, XlinkFields
 from .physical_model import XLINK_PHYSICAL_MODEL
 from .const import DeviceEntity
+from .errors import APIREQUESTError, DeviceOfflineError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -44,9 +46,7 @@ class PTP:
             if rsp_json and XlinkFields.ACCESS_TOKEN in rsp_json:
                 return rsp_json[XlinkFields.USER_ID]
             raise APIDATAEMPTYError("Reponse data empty!")
-        _LOGGER.error(
-            f"User authorize failed, username: {username}, password: {username}."
-        )
+        _LOGGER.error("LinkedGo authorization failed")
         raise APIAuthError("Invalid credentials!")
 
     async def async_user_auth(self, username, password) -> str:
@@ -64,9 +64,7 @@ class PTP:
             if rsp_json and XlinkFields.ACCESS_TOKEN in rsp_json:
                 return rsp_json[XlinkFields.USER_ID]
             raise APIDATAEMPTYError("Reponse data empty!")
-        _LOGGER.error(
-            f"User authorize failed, username: {username}, password: {username}."
-        )
+        _LOGGER.error("LinkedGo authorization failed")
         raise APIAuthError("Invalid credentials!")
 
     async def async_user_home(self) -> list[dict[str, Any]]:
@@ -97,6 +95,9 @@ class PTP:
         :rtype: List
         """
         code, rsp_json = await self.api.async_home_devices(home_id)
+        if code == 403:
+            await self.async_user_auth(self.username, self.password)
+            code, rsp_json = await self.api.async_home_devices(home_id)
         if code and code == 200:
             if rsp_json:
                 devices: list[DeviceEntity] = []
@@ -110,7 +111,7 @@ class PTP:
                         ha_supported_features = getattr(
                             model_class, "ha_supported_features"
                         )
-                        attributes = getattr(model_class, "attributes", {})
+                        attributes: dict[str, Callable[[dict], tuple[bool, Any]]] = getattr(model_class, "attributes", {})
                         properties = {}
                         for field, func in attributes.items():
                             if callable(func):
@@ -137,34 +138,38 @@ class PTP:
         _LOGGER.error(f"Query home devices failed, homeid: {home_id}.")
         raise APIREQUESTError("Request failed!")
 
-    async def async_device_control(
-        self, entity: DeviceEntity, service: str, value: Any
-    ) -> bool:
-        """Control device.
+    def encode_control(self, entity: DeviceEntity, service: str, value: Any) -> dict[str, Any]:
+        model = XLINK_PHYSICAL_MODEL.get(entity.product_id)
+        encoder: Callable[[DeviceEntity, Any], tuple[bool, list[dict[str, Any]] | None]] | None = getattr(model, "services", {}).get(service)
+        if not callable(encoder):
+            raise APIREQUESTError(f"Unsupported LinkedGo action: {service}")
+        valid, datapoints = encoder(entity, value)
+        if not valid or not datapoints:
+            raise APIREQUESTError(f"Unsupported LinkedGo value for {service}: {value}")
+        return {str(point["index"]): point["value"] for point in datapoints}
 
-        :return: True - success, False - failed.
-        :rtype: bool
-        """
-        pid = entity.product_id
-        did = entity.device_id
-        if pid in XLINK_PHYSICAL_MODEL:
-            model_class = XLINK_PHYSICAL_MODEL[pid]
-            services = getattr(model_class, "services", {})
-            if service in services:
-                func = services[service]
-                if callable(func):
-                    ret, dp = func(entity, value)
-                    if ret:
-                        code, rsp_json = await self.api.async_send_multi_cmd(did, dp)
-                        if code and code == 200:
-                            return True
-                        _LOGGER.error(f"Device control failed, pid: {pid}, did: {did}")
-                    _LOGGER.warning(
-                        f"Physical model encoding failed, productid: {pid}, service: {service}, value: {value}"
-                    )
-                _LOGGER.warning(f"Unsupported service: {service}")
-            _LOGGER.warning(f"Unsupported service: {service}")
-        return False
+    @staticmethod
+    def decode_state(product_id: str, raw: dict[str, Any]) -> dict[str, Any]:
+        model = XLINK_PHYSICAL_MODEL[product_id]
+        properties = {}
+        for field, decoder in model.attributes.items():
+            valid, value = decoder(raw)
+            if valid:
+                properties[field] = value
+        return properties
+
+    async def async_set_datapoints(self, device_id: str | int, values: dict[str, Any]) -> None:
+        datapoints = [{"index": int(index), "value": value} for index, value in values.items()]
+        code, response = await self.api.async_send_multi_cmd(device_id, datapoints)
+        if code == 403:
+            await self.async_user_auth(self.username, self.password)
+            code, response = await self.api.async_send_multi_cmd(device_id, datapoints)
+        if code != 200:
+            error = response.get("error", {}) if isinstance(response, dict) else {}
+            error_code = error.get("code") if isinstance(error, dict) else None
+            if error_code in (4001054, 4001064):
+                raise DeviceOfflineError("LinkedGo cannot reach this controller; the setting was not confirmed")
+            raise APIREQUESTError(f"LinkedGo rejected the setting (HTTP {code}, error {error_code})")
 
     async def async_batch_device_state(self, devices: dict) -> dict:
         """Batch request device states.
@@ -184,38 +189,20 @@ class PTP:
         # For each pid group, query the state and decode
         for pid, devs in pid_to_devices.items():
             code, rsp_json = await self.api.async_batch_query_vdevice(pid, devs)
+            if code == 403:
+                await self.async_user_auth(self.username, self.password)
+                code, rsp_json = await self.api.async_batch_query_vdevice(pid, devs)
             if code == 200 and rsp_json:
                 states = rsp_json.get(XlinkFields.LIST, [])
-                model_class = XLINK_PHYSICAL_MODEL[pid]
-                if not model_class:
-                    continue
-                attributes = getattr(model_class, "attributes", {})
                 for state in states:
                     device_id = state.get("device_id")
-                    if not device_id:
-                        continue
-                    if isinstance(device_id, int):
-                        device_id = str(device_id)
-                    device_state = {}
-                    properties = {}
-                    for field, func in attributes.items():
-                        if callable(func):
-                            ret, value = func(state)
-                            if ret:
-                                properties[field] = value
-                    device_state["properties"] = properties
-                    device_state["raw_data"] = state
-                    devices_state[device_id] = device_state
-            elif code == 403 and rsp_json:
-                _LOGGER.warning(
-                    f"Batch query request was forbidden, error message: {rsp_json}"
-                )
-                await self.async_user_auth(self.username, self.password)
-                return None
+                    if device_id is not None:
+                        devices_state[str(device_id)] = {
+                            "properties": self.decode_state(pid, state),
+                            "raw_data": state,
+                        }
             else:
-                _LOGGER.error(
-                    f"Batch query v_devices failed, pid: {pid}, devices: {str(devs)}"
-                )
+                raise APIREQUESTError(f"LinkedGo state query failed (HTTP {code})")
 
         # Check wether access token is going to be timeout. If it is, refresh token.
         is_valid = self.api.authorization_validate(timedelta=6900)
@@ -245,10 +232,6 @@ class PTP:
 
 class APIAuthError(Exception):
     """Exception class for auth error."""
-
-
-class APIREQUESTError(Exception):
-    """Exception class for request error."""
 
 
 class APIDATAEMPTYError(Exception):

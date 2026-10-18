@@ -11,7 +11,6 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.device_registry import DeviceEntry
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .coordinator import MyCoordinator
 from .xlink_ptp import PTP
@@ -30,7 +29,7 @@ type MyConfigEntry = ConfigEntry[RuntimeData]
 class RuntimeData:
     """Class to hold your data."""
 
-    coordinator: DataUpdateCoordinator
+    coordinator: MyCoordinator
     cancel_update_listener: Callable
 
 
@@ -38,11 +37,13 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: MyConfigEntry) ->
     """Set up Example Integration from a config entry."""
 
     ptp = PTP()
+    username = config_entry.data["username"]
+    password = config_entry.data["password"]
+    ptp.username = username
+    ptp.password = password
     if not ptp.authorization_validate(timedelta=0):
-        username = config_entry.data["username"]
-        password = config_entry.data["password"]
         await ptp.async_user_auth(username, password)
-    hub = Hub(hass, ptp)
+    hub = Hub(ptp, lambda coroutine, name: config_entry.async_create_background_task(hass, coroutine, name))
 
     # ----------------------------------------------------------------------------
     # Initialise the coordinator that manages data updates from your api.
@@ -126,4 +127,7 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: MyConfigEntry) -
         hass.services.async_remove(DOMAIN, service)
 
     # Unload platforms and return result
-    return await hass.config_entries.async_unload_platforms(config_entry, PLATFORMS)
+    unloaded = await hass.config_entries.async_unload_platforms(config_entry, PLATFORMS)
+    if unloaded:
+        await config_entry.runtime_data.coordinator.hub.async_shutdown()
+    return unloaded

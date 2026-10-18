@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 import logging
-import asyncio
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -50,6 +49,7 @@ from . import MyConfigEntry
 from .coordinator import MyCoordinator
 from .hub import Hub
 from .const import DeviceEntity
+from .errors import APIREQUESTError
 
 
 logger = logging.getLogger(__name__)
@@ -112,7 +112,15 @@ class MyThermostat(CoordinatorEntity, ClimateEntity):
 
     @property
     def available(self) -> bool:
-        return self.hub.online and self.entity.online
+        return self.hub.pending(self.entity) or (super().available and self.entity.online)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return {
+            "pending_sync": self.hub.pending(self.entity),
+            "last_sync_error": self.hub.sync_error(self.entity),
+            "device_online": self.entity.online,
+        }
 
     @property
     def current_humidity(self) -> float | None:
@@ -196,30 +204,24 @@ class MyThermostat(CoordinatorEntity, ClimateEntity):
 
     async def async_set_hvac_mode(self, hvac_mode):
         """Set new target hvac mode."""
-        ret = await self.hub.async_device_control(
-            self.entity,
+        await self._async_control(
             SERVICE_SET_HVAC_MODE,
             hvac_mode,
         )
-        await self.async_update_state(ret)
 
     async def async_turn_on(self):
         """Turn the entity on."""
-        ret = await self.hub.async_device_control(
-            self.entity,
+        await self._async_control(
             SERVICE_SET_HVAC_MODE,
             HVACMode.AUTO,
         )
-        await self.async_update_state(ret)
 
     async def async_turn_off(self):
         """Turn the entity off."""
-        ret = await self.hub.async_device_control(
-            self.entity,
+        await self._async_control(
             SERVICE_SET_HVAC_MODE,
             HVACMode.OFF,
         )
-        await self.async_update_state(ret)
 
     async def async_toggle(self):
         """Toggle the entity."""
@@ -227,57 +229,35 @@ class MyThermostat(CoordinatorEntity, ClimateEntity):
 
     async def async_set_preset_mode(self, preset_mode):
         """Set new target preset mode."""
-        ret = await self.hub.async_device_control(
-            self.entity,
+        await self._async_control(
             SERVICE_SET_PRESET_MODE,
             preset_mode,
         )
-        await self.async_update_state(ret)
 
     async def async_set_fan_mode(self, fan_mode):
         """Set new target fan mode."""
-        ret = await self.hub.async_device_control(
-            self.entity,
+        await self._async_control(
             SERVICE_SET_FAN_MODE,
             fan_mode,
         )
-        await self.async_update_state(ret)
 
     async def async_set_humidity(self, humidity):
         """Set new target humidity."""
-        ret = await self.hub.async_device_control(
-            self.entity,
+        await self._async_control(
             SERVICE_SET_HUMIDITY,
             humidity,
         )
-        await self.async_update_state(ret)
 
     # Specific Parameter(**kwargs) when invoke async_set_temperature()
     async def async_set_temperature(self, **kwargs: Any):
         """Set new target temperature."""
-        ret = await self.hub.async_device_control(
-            self.entity,
+        await self._async_control(
             SERVICE_SET_TEMPERATURE,
             kwargs[ATTR_TEMPERATURE],
         )
-        await self.async_update_state(ret)
 
-    async def async_update_state(self, opt_ret: bool):
-        """Update current device state and UI state."""
-
-        if opt_ret:
-            await asyncio.sleep(3)
-            states = await self.hub.async_get_device_states(
-                self.entity.product_id, self.entity.device_id
-            )
-            if states:
-                self.entity.properties.update(states)
-                self.async_write_ha_state()
-            else:
-                raise HomeAssistantError(
-                    f"Failed to request device state {self.entity.device_name}"
-                )
-        else:
-            raise HomeAssistantError(
-                f"Failed to control device {self.entity.device_name}"
-            )
+    async def _async_control(self, service: str, value: Any) -> None:
+        try:
+            await self.hub.async_device_control(self.entity, service, value)
+        except APIREQUESTError as error:
+            raise HomeAssistantError(str(error)) from error

@@ -190,7 +190,7 @@ class ST1800_HN:
         if "5" in state:
             max_temp = state["5"] // 10
         if value >= min_temp and value <= max_temp:
-            dp = [{"index": 1, "value": (value * 10)}]
+            dp = [{"index": 1, "value": round(value * 10)}]
             return (True, dp)
         return (False, None)
 

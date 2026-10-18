@@ -7,7 +7,7 @@
 
 import logging
 import aiohttp
-import urllib
+import urllib.request
 import json
 import datetime
 import threading
@@ -129,59 +129,20 @@ class XlinkAPI(object):
             return None, None
 
     async def send_request_async(self, rest_url, headers, request_body, method):
-        """Send HTTPS request using aiohttp in asynchronous method.
-
-        :param rest_url: Request URL.
-        :param headers: Request headers.
-        :param request_body: Request body (dict).
-        :param method: Request method: 'GET', 'POST', 'PUT', etc.
-        :return: (HTTP Status Code or None, None or str or dict)
-        :rtype: Tuple[int | None, Any]
-        """
+        """Preserve API errors so callers can distinguish rejection from stale state."""
+        timeout = aiohttp.ClientTimeout(total=15)
         try:
-            async with aiohttp.ClientSession() as session:
-                request_func = getattr(session, method.lower(), None)
-                if not request_func:
-                    _LOGGER.error(f"Unsupported HTTP method: {method}")
-                    return None, None
-
-                # For GET, do not pass json=request_body
-                if method.upper() == self.REQUEST_METHOD_GET:
-                    async with request_func(rest_url, headers=headers) as response:
-                        status = response.status
-                        text = await response.text()
-                        if status == 200:
-                            try:
-                                return status, await response.json()
-                            except Exception:
-                                _LOGGER.error(
-                                    f"Req url: {rest_url}\nRsp code: {status}\nRsp body: {text}"
-                                )
-                                return None, None
-                        _LOGGER.error(
-                            f"Req url: {rest_url}\nRsp code: {status}\nRsp body: {text}"
-                        )
-                        return None, None
-                else:
-                    async with request_func(
-                        rest_url,
-                        headers=headers,
-                        json=request_body if request_body else None,
-                    ) as response:
-                        status = response.status
-                        text = await response.text()
-                        if status == 200:
-                            try:
-                                return status, await response.json()
-                            except Exception:
-                                _LOGGER.error(f"Req url: {rest_url}\nRsp body: {text}")
-                                return None, None
-                        _LOGGER.error(
-                            f"Req url: {rest_url}\nRsp code: {status}\nRsp body: {text}"
-                        )
-                        return None, None
-        except Exception as e:
-            _LOGGER.error(f"HTTP request failed: {e}")
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                kwargs = {} if method.upper() == "GET" else {"json": request_body}
+                async with session.request(method, rest_url, headers=headers, **kwargs) as response:
+                    try:
+                        body = await response.json(content_type=None)
+                    except (ValueError, UnicodeDecodeError):
+                        _LOGGER.error("LinkedGo returned a non-JSON response (HTTP %s)", response.status)
+                        return response.status, None
+                    return response.status, body
+        except (aiohttp.ClientError, TimeoutError) as error:
+            _LOGGER.error("LinkedGo request failed: %s", type(error).__name__)
             return None, None
 
     def user_login(self, usename, password):
@@ -208,7 +169,7 @@ class XlinkAPI(object):
             rest_url, headers, request_body, self.REQUEST_METHOD_POST
         )
 
-        if code and code == 200:
+        if code == 200 and isinstance(rsp_json, dict):
             if XlinkFields.ACCESS_TOKEN in rsp_json:
                 self.access_token = rsp_json[XlinkFields.ACCESS_TOKEN]
                 self.refresh_token = rsp_json[XlinkFields.REFRESH_TOKEN]
@@ -244,7 +205,7 @@ class XlinkAPI(object):
             rest_url, headers, request_body, self.REQUEST_METHOD_POST
         )
 
-        if code and code == 200:
+        if code == 200 and isinstance(rsp_json, dict):
             if XlinkFields.ACCESS_TOKEN in rsp_json:
                 self.access_token = rsp_json[XlinkFields.ACCESS_TOKEN]
                 self.refresh_token = rsp_json[XlinkFields.REFRESH_TOKEN]
@@ -279,7 +240,7 @@ class XlinkAPI(object):
             rest_url, headers, request_body, self.REQUEST_METHOD_POST
         )
 
-        if code and code == 200:
+        if code == 200 and isinstance(rsp_json, dict):
             if XlinkFields.ACCESS_TOKEN in rsp_json:
                 self.access_token = rsp_json[XlinkFields.ACCESS_TOKEN]
                 self.refresh_token = rsp_json[XlinkFields.REFRESH_TOKEN]
@@ -423,7 +384,7 @@ class XlinkAPI(object):
         :return: Ture-valid, False-invalid.
         :rtype: bool
         """
-        if self.access_token:
+        if self.access_token and self.expire_time is not None:
             current_time = datetime.datetime.now()
             if self.expire_time > (
                 current_time + datetime.timedelta(seconds=timedelta)
