@@ -105,7 +105,7 @@ class MyThermostat(CoordinatorEntity, ClimateEntity):
             "identifiers": {(DOMAIN, self.entity.device_id)},
             # If desired, the name for the device could be different to the entity
             "name": self.entity.device_name,
-            "sw_version": self.entity.sw_version,
+            "sw_version": str(self.entity.sw_version) if self.entity.sw_version is not None else None,
             "model": self.entity.product_model,
             "manufacturer": self.hub.manufacturer,
         }
